@@ -88,10 +88,23 @@ class Entity:
         return cls(**dct)
 
 
+class NamedEntity(Entity):
+    REQUIRED_ARGS = ['name']
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    @property
+    def name(self):
+        return self._attrs['name']
+
+
 class RelationalEntity(Entity):
     """
     Entities that can be in a one-to-many relationship with other entities
     """
+
+    FILTER = []
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
