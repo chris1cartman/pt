@@ -76,8 +76,8 @@ class Entity:
         """
 
         for arg in kwargs.keys():
-            if type(arg) not in self.ALLOWED_TYPES:
-                raise TypeError('Argument {} has invalid type {}'.format(arg, type(arg)))
+            if type(kwargs[arg]) not in self.ALLOWED_TYPES:
+                raise TypeError('Argument {} has invalid type {}'.format(arg, type(kwargs[arg])))
 
     def store(self):
         IOController().store(self)
@@ -104,10 +104,52 @@ class RelationalEntity(Entity):
     Entities that can be in a one-to-many relationship with other entities
     """
 
-    FILTER = []
+    RELATIONSHIP_ATTR = 'relationships'
+    REQUIRED_ARGS = ['name']
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # init the relationships
+        relationships = kwargs.get(self.RELATIONSHIP_ATTR, None)
+        if not relationships:
+            relationships = []
+        elif type(relationships) is not list:
+            relationships = [relationships]
+        self._relationship_list = relationships
 
+        # update in the attributes as well
+        self._attrs.update({self.RELATIONSHIP_ATTR: self._relationship_list})
+
+    @property
+    def relationships(self):
+        return self._relationship_list
+
+
+    def _check_args(self, **kwargs):
+        """
+        Checks whether the arguments are in the required structure
+        :param kwargs: arguments
+        :return: None
+        """
+
+        for arg in kwargs.keys():
+            if arg == self.RELATIONSHIP_ATTR and (kwargs[arg] is None or type(kwargs[arg]) is list):
+                continue
+            if type(kwargs[arg]) not in self.ALLOWED_TYPES:
+                raise TypeError('Argument {} has invalid type {}'.format(arg, type(kwargs[arg])))
+
+    def to_df(self):
+
+        dct = {attr: [self._attrs[attr]] for attr in self._attrs.keys()}
+
+        # separate items in the relatioship list with a comma
+        relationship_repr = ''
+        for rel in self._relationship_list:
+            relationship_repr += rel + ','
+        relationship_repr = relationship_repr[:-1]
+
+        # update in dictionary
+        dct.update({self.RELATIONSHIP_ATTR: [relationship_repr]})
+        return pd.DataFrame(dct)
 
