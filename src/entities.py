@@ -11,7 +11,7 @@ class Entity:
     REQUIRED_ARGS = []
     ALLOWED_TYPES = [str, int, float]
 
-    def __init__(self, **kwargs):
+    def __init__(self, store=True, **kwargs):
         """
         Initiates the entity
         :param kwargs: arguments
@@ -28,7 +28,8 @@ class Entity:
         if not 'id' in self._attrs.keys():
             id = str(uuid.uuid4())
             self._attrs.update({'id': id})
-            self.store()
+            if store:
+                self.store()
 
     def update_attributes(self, **kwargs):
         """
@@ -91,8 +92,11 @@ class Entity:
 class NamedEntity(Entity):
     REQUIRED_ARGS = ['name']
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, store=True, **kwargs):
+        super().__init__(store=False, **kwargs)
+
+        if store:
+            self.store()
 
     @property
     def name(self):
@@ -107,19 +111,48 @@ class RelationalEntity(Entity):
     RELATIONSHIP_ATTR = 'relationships'
     REQUIRED_ARGS = ['name']
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, store=True, **kwargs):
+        super().__init__(store=False, **kwargs)
 
-        # init the relationships
-        relationships = kwargs.get(self.RELATIONSHIP_ATTR, None)
-        if not relationships:
-            relationships = []
-        elif type(relationships) is not list:
-            relationships = [relationships]
-        self._relationship_list = relationships
+        # init the relationship
+        self._relationship_list = []
+        relationship = kwargs.get(self.RELATIONSHIP_ATTR, None)
+        self._add(relationship)
 
         # update in the attributes as well
         self._attrs.update({self.RELATIONSHIP_ATTR: self._relationship_list})
+
+        if store:
+            self.store()
+
+    def _add(self, relationship):
+        if not relationship:
+            relationship = []
+        elif type(relationship) is str:
+            relationship = relationship.split(',')
+        elif type(relationship) is Entity:
+            relationship = [relationship.id]
+        self._relationship_list += relationship
+
+    @property
+    def name(self):
+        return self._attrs['name']
+
+    def add_relationships(self, relationship):
+        self._add(relationship)
+        IOController.update(self)
+
+    def remove_relationship(self, relationship):
+        if type(relationship) is Entity:
+            relationship = relationship.id
+
+        try:
+            assert relationship in self._relationship_list
+        except AssertionError:
+            raise ValueError('Relationship with {} does not exist'.format(relationship))
+
+        self._relationship_list.remove(relationship)
+        IOController.update(self)
 
     @property
     def relationships(self):
@@ -152,4 +185,44 @@ class RelationalEntity(Entity):
         # update in dictionary
         dct.update({self.RELATIONSHIP_ATTR: [relationship_repr]})
         return pd.DataFrame(dct)
+
+
+class Person(RelationalEntity):
+    """
+    Person class
+    """
+
+    RELATIONSHIP_ATTR = 'groups'
+
+    def __init__(self, store=True, **kwargs):
+        super().__init__(store=False, **kwargs)
+
+        if store:
+            self.store()
+
+    def add_to_group(self, group):
+        self.add_relationships(group)
+
+    def remove_from_group(self, group):
+        self.remove_relationship(group)
+
+
+class Group(RelationalEntity):
+    """
+    Group class
+    """
+
+    RELATIONSHIP_ATTR = 'members'
+
+    def __init__(self, store=True, **kwargs):
+        super().__init__(store=False, **kwargs)
+
+        if store:
+            self.store()
+
+    def add_member(self, person):
+        self.add_relationships(person)
+
+    def remove_member(self, person):
+        self.remove_relationship(person)
 
