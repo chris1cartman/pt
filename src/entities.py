@@ -44,7 +44,7 @@ class Entity:
         self._attrs.update(kwargs)
 
         # save the attributes in the server
-        IOController().update(self)
+        self.update_in_store()
 
     @property
     def type(self):
@@ -82,6 +82,9 @@ class Entity:
 
     def store(self):
         IOController().store(self)
+
+    def update_in_store(self):
+        IOController().update(self)
 
     @classmethod
     def from_store(cls, id):
@@ -129,9 +132,14 @@ class RelationalEntity(Entity):
         if not relationship:
             relationship = []
         elif type(relationship) is str:
-            relationship = relationship.split(',')
-        elif type(relationship) is Entity:
+            relationship = relationship.split(';')
+        elif hasattr(relationship, 'id'):
             relationship = [relationship.id]
+        elif type(relationship) is list:
+            try:
+                relationship = [rel.id for rel in relationship]
+            except AttributeError:
+                pass
         self._relationship_list += relationship
 
     @property
@@ -140,7 +148,7 @@ class RelationalEntity(Entity):
 
     def add_relationships(self, relationship):
         self._add(relationship)
-        IOController.update(self)
+        self.update_in_store()
 
     def remove_relationship(self, relationship):
         if type(relationship) is Entity:
@@ -152,7 +160,7 @@ class RelationalEntity(Entity):
             raise ValueError('Relationship with {} does not exist'.format(relationship))
 
         self._relationship_list.remove(relationship)
-        IOController.update(self)
+        self.update_in_store()
 
     @property
     def relationships(self):
@@ -179,7 +187,7 @@ class RelationalEntity(Entity):
         # separate items in the relatioship list with a comma
         relationship_repr = ''
         for rel in self._relationship_list:
-            relationship_repr += rel + ','
+            relationship_repr += rel + ';'
         relationship_repr = relationship_repr[:-1]
 
         # update in dictionary
@@ -193,6 +201,7 @@ class Person(RelationalEntity):
     """
 
     RELATIONSHIP_ATTR = 'groups'
+    TYPE = 'person'
 
     def __init__(self, store=True, **kwargs):
         super().__init__(store=False, **kwargs)
@@ -200,11 +209,18 @@ class Person(RelationalEntity):
         if store:
             self.store()
 
+    @property
+    def groups(self):
+        return self._relationship_list
+
     def add_to_group(self, group):
         self.add_relationships(group)
 
     def remove_from_group(self, group):
         self.remove_relationship(group)
+
+    def __eq__(self, other):
+        return type(other) is Person and self.id == other.id
 
 
 class Group(RelationalEntity):
@@ -213,6 +229,7 @@ class Group(RelationalEntity):
     """
 
     RELATIONSHIP_ATTR = 'members'
+    TYPE = 'group'
 
     def __init__(self, store=True, **kwargs):
         super().__init__(store=False, **kwargs)
@@ -220,9 +237,16 @@ class Group(RelationalEntity):
         if store:
             self.store()
 
+    @property
+    def members(self):
+        return self._relationship_list
+
     def add_member(self, person):
         self.add_relationships(person)
 
     def remove_member(self, person):
         self.remove_relationship(person)
+
+    def __eq__(self, other):
+        return type(other) is Group and self.id == other.id
 
