@@ -115,6 +115,18 @@ class IOController(metaclass=Singleton):
         current_list = self.retrieve_entity_list(entity_type)
         return current_list.loc[current_list.index == id].iloc[0].to_dict()
 
+    def is_type(self, entity_type, id):
+        current_list = self.retrieve_entity_list(entity_type)
+        return len(current_list.loc[current_list.index == id]) == 1
+
+    def is_person(self, id):
+        return self.is_type('person', id)
+
+    def is_group(self, id):
+        return self.is_type('group', id)
+
+    def is_abstract(self, id):
+        return self.is_type('abstract', id)
 
 
 

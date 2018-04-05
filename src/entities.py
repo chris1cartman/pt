@@ -1,5 +1,6 @@
 import uuid
 import pandas as pd
+import numpy as np
 from src.io import IOController
 
 class Entity:
@@ -9,7 +10,7 @@ class Entity:
 
     TYPE = 'abstract'
     REQUIRED_ARGS = []
-    ALLOWED_TYPES = [str, int, float]
+    ALLOWED_TYPES = [str, int, float, np.float64]
 
     def __init__(self, store=True, **kwargs):
         """
@@ -53,6 +54,10 @@ class Entity:
     @property
     def id(self):
         return self._attrs['id']
+
+    @property
+    def attrs(self):
+        return self._attrs.copy()
 
     def to_df(self):
         dct = {attr: [self._attrs[attr]] for attr in self._attrs.keys()}
@@ -129,6 +134,9 @@ class RelationalEntity(Entity):
             self.store()
 
     def _add(self, relationship):
+
+        # entities relationships are stored with ids
+        # we therefore allow for lists of entities, lists of ids, single entities and single ids
         if not relationship:
             relationship = []
         elif type(relationship) is str:
@@ -140,7 +148,11 @@ class RelationalEntity(Entity):
                 relationship = [rel.id for rel in relationship]
             except AttributeError:
                 pass
-        self._relationship_list += relationship
+
+        # make sure that ids in the relationship list are unique
+        for rel in relationship:
+            if rel not in self._relationship_list:
+                self._relationship_list.append(rel)
 
     @property
     def name(self):
@@ -194,6 +206,21 @@ class RelationalEntity(Entity):
         dct.update({self.RELATIONSHIP_ATTR: [relationship_repr]})
         return pd.DataFrame(dct)
 
+    @classmethod
+    def from_store(cls, id):
+        dct = IOController().retrieve_by_id(cls.TYPE, id)
+
+        # check that the group is not nan
+        no_relationships = False
+        try:
+            no_relationships = np.isnan(dct[cls.RELATIONSHIP_ATTR])
+        except TypeError:
+            pass
+        if no_relationships:
+            dct.update({cls.RELATIONSHIP_ATTR: None})
+
+        return cls(**dct)
+
 
 class Person(RelationalEntity):
     """
@@ -213,14 +240,25 @@ class Person(RelationalEntity):
     def groups(self):
         return self._relationship_list
 
-    def add_to_group(self, group):
+    def add_to_group(self, group, establish_connection=True):
         self.add_relationships(group)
+
+        # establish the connection in both ways when called actively
+        if establish_connection:
+            for g in self.groups:
+                Group.from_store(g).add_member(self, establish_connection=False)
 
     def remove_from_group(self, group):
         self.remove_relationship(group)
 
     def __eq__(self, other):
         return type(other) is Person and self.id == other.id
+
+    def refresh(self):
+        # get the current version of the entity from the store
+        p = Person.from_store(self.id)
+        self._relationship_list = p.relationships
+        self._attrs = p.attrs
 
 
 class Group(RelationalEntity):
@@ -241,8 +279,13 @@ class Group(RelationalEntity):
     def members(self):
         return self._relationship_list
 
-    def add_member(self, person):
+    def add_member(self, person, establish_connection=True):
         self.add_relationships(person)
+
+        # establish the connection in both ways when called actively
+        if establish_connection:
+            for p in self.members:
+                Person.from_store(p).add_to_group(self, establish_connection=False)
 
     def remove_member(self, person):
         self.remove_relationship(person)
@@ -250,3 +293,8 @@ class Group(RelationalEntity):
     def __eq__(self, other):
         return type(other) is Group and self.id == other.id
 
+    def refresh(self):
+        # get the current version of the entity from the store
+        g = Group.from_store(self.id)
+        self._relationship_list = g.relationships
+        self._attrs = g.attrs
