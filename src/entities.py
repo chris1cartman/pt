@@ -356,6 +356,18 @@ class Payment(RelationalEntity):
             self.store()
 
     @property
+    def group_id(self):
+        return self._attrs['group_id']
+
+    @property
+    def payer_id(self):
+        return self._attrs['payer_id']
+
+    @property
+    def amount(self):
+        return self._attrs['amount']
+
+    @property
     def currency(self):
         return self._attrs['currency']
 
@@ -394,7 +406,11 @@ class Payment(RelationalEntity):
         self.remove_relationship(person)
 
     def to_matrix(self):
-        pass
+        g = Group.from_store(self.group_id)
+        df = pd.DataFrame(index=g.members, columns=g.members).fillna(0.)
+        for rec in self.paid_for:
+            df.set_value(self.payer_id, rec, self.amount / len(self.paid_for))
 
+        return df
 
 
