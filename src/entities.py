@@ -403,7 +403,6 @@ class Group(RelationalEntity):
 
             while not abs(su_payer) < 0.000000001:
                 # get money owed to receiver and the index
-                print(su_payer)
                 su_receiver = receivers.iloc[0]
                 ind_receiver = receivers.index[0]
 
