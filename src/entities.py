@@ -372,7 +372,8 @@ class Group(RelationalEntity):
     def register_payment(self, payer, amount, **kwargs):
         _ = Payment(store=True, group_id=self.id, payer_id=payer.id, amount=amount, **kwargs)
 
-    def summarize_payments(self):
+    @property
+    def summary(self):
 
         # init the dataframe
         df = pd.DataFrame(index=self.members, columns=self.members).fillna(0.)
@@ -382,6 +383,50 @@ class Group(RelationalEntity):
             df += p.to_matrix()
 
         return df
+
+    @property
+    def compensation_table(self):
+        df = self.summary
+
+        net_cash_out = df.sum(axis=1) - df.sum(axis=0)
+        payers = net_cash_out.loc[net_cash_out < 0]
+        receivers = net_cash_out.loc[net_cash_out >= 0]
+        payers.sort_values(inplace=True)
+        receivers.sort_values(inplace=True)
+
+        res = pd.DataFrame(index=self.members, columns=self.members).fillna(0.)
+
+        while not abs(payers.sum()) < 0.000000001:
+
+            su_payer = - payers.iloc[0]
+            ind_payer = payers.index[0]
+
+            while not abs(su_payer) < 0.000000001:
+                # get money owed to receiver and the index
+                print(su_payer)
+                su_receiver = receivers.iloc[0]
+                ind_receiver = receivers.index[0]
+
+                # get the amount paid to the receiver
+                paid = min(su_payer, su_receiver)
+
+                # set the values in the data table
+                res.set_value(ind_payer, ind_receiver, paid)
+
+                # reduce the sum and what the payer has to pay
+                su_payer -= paid
+                su_receiver -= paid
+
+                receivers.set_value(ind_receiver, su_receiver)
+
+                # if the receiver has received everything she needs, drop her
+                if not su_receiver:
+                    receivers.drop(ind_receiver, axis=0, inplace=True)
+
+            # done with this payer, drop her
+            payers.drop(ind_payer, axis=0, inplace=True)
+
+        return res
 
     def remove_payment(self, payment):
         if type(payment) is Payment:
