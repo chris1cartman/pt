@@ -92,6 +92,21 @@ class IOController(metaclass=Singleton):
         current_list = current_list.append(entity.to_df())
         self._save(current_list, self._retrieve_file_name(entity.type))
 
+    def remove_by_id(self, entity_type, id):
+        """
+        Removes an entity from the store by its id
+        :param entity_type: entity type
+        :param id: id of the entity
+        :return: None
+        """
+
+        current_list = self.retrieve_entity_list(entity_type)
+        try:
+            current_list.drop(id, axis=0, inplace=True)
+        except ValueError:
+            pass
+        self._save(current_list, self._retrieve_file_name(entity_type))
+
     def update(self, entity):
         """
         Updates a stored entity
@@ -115,6 +130,20 @@ class IOController(metaclass=Singleton):
         current_list = self.retrieve_entity_list(entity_type)
         return current_list.loc[current_list.index == id].iloc[0].to_dict()
 
+    def retrieve_payments_data_for_group(self, group_id):
+        """
+        Retrieves all payments made to a group with the given group id
+        :param group_id: group id
+        :return: DataFrame with all payments
+        """
+
+        p_list = self.retrieve_entity_list('payment')
+        payments = p_list.loc[p_list['group_id'] == group_id, :].to_dict('records')
+        for p in payments:
+            paid_for = p['paid_for'].split(';')
+            p.update({'paid_for': paid_for})
+        return payments
+
     def is_type(self, entity_type, id):
         current_list = self.retrieve_entity_list(entity_type)
         return len(current_list.loc[current_list.index == id]) == 1
@@ -124,6 +153,9 @@ class IOController(metaclass=Singleton):
 
     def is_group(self, id):
         return self.is_type('group', id)
+
+    def is_payment(self, id):
+        return self.is_type('payment', id)
 
     def is_abstract(self, id):
         return self.is_type('abstract', id)
