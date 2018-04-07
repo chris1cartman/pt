@@ -150,54 +150,86 @@ class RelationalEntity(AutoFillEntity):
     def __init__(self, store=True, **kwargs):
         super().__init__(store=False, **kwargs)
 
-        # init the relationships
         self._relationship_list = []
-        self._add(self._attrs[self.RELATIONSHIP_ATTR])
-
-        # update in the attributes as well
-        self._attrs.update({self.RELATIONSHIP_ATTR: self._relationship_list})
-
         if store:
             self.store()
 
-    def _add(self, relationships):
+        # init the relationships
+        self.add_relationship(self._attrs[self.RELATIONSHIP_ATTR])
 
-        # entities relationships are stored with ids
-        # we therefore allow for lists of entities, lists of ids, single entities and single ids
-        if not relationships:
-            relationships = []
-        elif type(relationships) is list:
-            try:
-                relationships = [rel.id for rel in relationships]
-            except AttributeError:
-                pass
-        else:
-            try:
-                relationships = [relationships.id]
-            except AttributeError:
-                relationships = [relationships]
+    def _add_entity_by_id(self, entity_id):
+        if not IOController().is_type(self.RELATIONSHIP_TYPE, entity_id):
+            raise TypeError('Cannot establish a relationship with this entity, expected {}, but received something else'.format(self.RELATIONSHIP_TYPE))
+        self._relationship_list.append(entity_id)
 
-        # make sure that ids in the relationship list are unique
-        for rel in relationships:
-            if rel not in self._relationship_list:
-                self._relationship_list.append(rel)
+    def _add_entity(self, entity, establish_connection=True):
+        if not issubclass(type(entity), Entity):
+            raise TypeError('Argument has type {}, not Entity'.format(type(entity)))
+        self._add_entity_by_id(entity.id)
+        if establish_connection:
+            self._establish_connection(entity)
+
+    def _add_entities_by_ids(self, entity_ids):
+        try:
+            assert type(entity_ids) is list
+        except AssertionError:
+            raise TypeError('Argument is not a list, but {}'.format(type(entity_ids)))
+
+        for entity_id in entity_ids:
+            self._add_entity_by_id(entity_id)
+
+    def _add_entities(self, entities, establish_connection=True):
+        try:
+            assert type(entities) is list
+        except AssertionError:
+            raise TypeError('Argument is not a list, but {}'.format(type(entities)))
+
+        for entity in entities:
+            self._add_entity(entity, establish_connection=establish_connection)
+
+    def _establish_connection(self, entity):
+        pass
+
+    def _remove_connection(self, entity):
+        pass
 
     @property
     def name(self):
         return self._attrs['name']
 
-    def add_relationship(self, relationship):
-        self._add(relationship)
+    def add_relationship(self, relationship, establish_connection=True):
+
+        # entities relationships are stored with ids
+        # we therefore allow for lists of entities, lists of ids, single entities and single ids
+        if not relationship:
+            return
+
+        elif type(relationship) is list:
+            try:
+                self._add_entities(relationship, establish_connection=establish_connection)
+            except TypeError:
+                self._add_entities_by_ids(relationship)
+        else:
+            try:
+                self._add_entity(relationship, establish_connection=establish_connection)
+            except TypeError:
+                self._add_entity_by_id(relationship)
+
+        # update in store
         self._attrs.update({self.RELATIONSHIP_ATTR: self._relationship_list})
         self.update_in_store()
 
-    def remove_relationship(self, relationship):
+    def remove_relationship(self, relationship, remove_connection=True):
         try:
             assert relationship.id in self._relationship_list
         except AssertionError:
             raise ValueError('Relationship with {} does not exist'.format(relationship))
 
-        self._relationship_list.remove(relationship)
+        # remove the relationship and the connection (i.e. the relationship in the other direction)
+        self._relationship_list.remove(relationship.id)
+        if remove_connection:
+            self._remove_connection(relationship)
+
         self._attrs.update({self.RELATIONSHIP_ATTR: self._relationship_list})
         self.update_in_store()
 
@@ -264,28 +296,23 @@ class Person(RelationalEntity):
     TYPE = 'person'
 
     def __init__(self, store=True, **kwargs):
-        super().__init__(store=False, **kwargs)
-
-        if store:
-            self.store()
+        super().__init__(store=store, **kwargs)
 
     @property
     def groups(self):
         return self._relationship_list
 
-    def add_to_group(self, group, establish_connection=True):
-        self.add_relationship(group)
+    def _establish_connection(self, entity):
+        entity.add_member(self, establish_connection=False)
 
-        # establish the connection in both ways when called actively
-        if establish_connection:
-            group.add_member(self, establish_connection=False)
+    def _remove_connection(self, entity):
+        entity.remove_member(self, remove_connection=False)
+
+    def add_to_group(self, group, establish_connection=True):
+        self.add_relationship(group, establish_connection=establish_connection)
 
     def remove_from_group(self, group, remove_connection=True):
-        self.remove_relationship(group)
-
-        # remove the connection
-        if remove_connection:
-            group.remove_member(self, remove_connection=False)
+        self.remove_relationship(group, remove_connection=remove_connection)
 
     def __eq__(self, other):
         return type(other) is Person and self.id == other.id
@@ -311,10 +338,7 @@ class Group(RelationalEntity):
     TYPE = 'group'
 
     def __init__(self, store=True, **kwargs):
-        super().__init__(store=False, **kwargs)
-
-        if store:
-            self.store()
+        super().__init__(store=store, **kwargs)
 
     @property
     def members(self):
@@ -324,19 +348,17 @@ class Group(RelationalEntity):
     def payments(self):
         return [Payment(store=False, **dct) for dct in IOController().retrieve_payments_data_for_group(self.id)]
 
-    def add_member(self, person, establish_connection=True):
-        self.add_relationship(person)
+    def _establish_connection(self, entity):
+        entity.add_to_group(self, establish_connection=False)
 
-        # establish the connection in both ways when called actively
-        if establish_connection:
-            person.add_to_group(self, establish_connection=False)
+    def _remove_connection(self, entity):
+        entity.remove_from_group(self, remove_connection=False)
+
+    def add_member(self, person, establish_connection=True):
+        self.add_relationship(person, establish_connection=establish_connection)
 
     def remove_member(self, person, remove_connection=True):
-        self.remove_relationship(person)
-
-        # remove the connection if desired
-        if remove_connection:
-            person.remove_from_group(self, remove_connection=False)
+        self.remove_relationship(person, remove_connection=remove_connection)
 
     def __eq__(self, other):
         return type(other) is Group and self.id == other.id
@@ -375,15 +397,13 @@ class Payment(RelationalEntity):
 
     REQUIRED_ARGS = ['payer_id', 'group_id', 'amount']
     RELATIONSHIP_ATTR = 'paid_for'
+    RELATIONSHIP_TYPE = 'person'
     AUTO_ARGS = ['paid_for', 'currency', 'purpose', 'comment', 'location']
     ALLOWED_RELATIONSHIP = Person
     TYPE = 'payment'
 
     def __init__(self, store=True, **kwargs):
-        super().__init__(store=False, **kwargs)
-
-        if store:
-            self.store()
+        super().__init__(store=store, **kwargs)
 
     @property
     def group_id(self):
