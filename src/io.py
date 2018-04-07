@@ -92,6 +92,21 @@ class IOController(metaclass=Singleton):
         current_list = current_list.append(entity.to_df())
         self._save(current_list, self._retrieve_file_name(entity.type))
 
+    def remove_by_id(self, entity_type, id):
+        """
+        Removes an entity from the store by its id
+        :param entity_type: entity type
+        :param id: id of the entity
+        :return: None
+        """
+
+        current_list = self.retrieve_entity_list(entity_type)
+        try:
+            current_list.drop(id, axis=0, inplace=True)
+        except ValueError:
+            pass
+        self._save(current_list, self._retrieve_file_name(entity_type))
+
     def update(self, entity):
         """
         Updates a stored entity
@@ -122,8 +137,12 @@ class IOController(metaclass=Singleton):
         :return: DataFrame with all payments
         """
 
-        p_list = self.retrieve_entity_list('group')
-        return p_list.loc[p_list['group'] == group_id, :].to_dict('records')
+        p_list = self.retrieve_entity_list('payment')
+        payments = p_list.loc[p_list['group_id'] == group_id, :].to_dict('records')
+        for p in payments:
+            paid_for = p['paid_for'].split(';')
+            p.update({'paid_for': paid_for})
+        return payments
 
     def is_type(self, entity_type, id):
         current_list = self.retrieve_entity_list(entity_type)

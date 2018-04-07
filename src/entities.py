@@ -88,6 +88,9 @@ class Entity:
     def store(self):
         IOController().store(self)
 
+    def delete_from_store(self):
+        IOController().remove_by_id(self.TYPE, self.id)
+
     def update_in_store(self):
         IOController().update(self)
 
@@ -293,6 +296,9 @@ class Person(RelationalEntity):
         self._relationship_list = p.relationships
         self._attrs = p.attrs
 
+    def make_payment(self, group, amount, **kwargs):
+        _ = Payment(store=True, group_id=group.id, payer_id=self.id, amount=amount, **kwargs)
+
 
 class Group(RelationalEntity):
     """
@@ -313,6 +319,10 @@ class Group(RelationalEntity):
     @property
     def members(self):
         return self._relationship_list
+
+    @property
+    def payments(self):
+        return [Payment(store=False, **dct) for dct in IOController().retrieve_payments_data_for_group(self.id)]
 
     def add_member(self, person, establish_connection=True):
         self.add_relationship(person)
@@ -337,6 +347,26 @@ class Group(RelationalEntity):
         self._relationship_list = g.relationships
         self._attrs = g.attrs
 
+    def register_payment(self, payer, amount, **kwargs):
+        _ = Payment(store=True, group_id=self.id, payer_id=payer.id, amount=amount, **kwargs)
+
+    def summarize_payments(self):
+
+        # init the dataframe
+        df = pd.DataFrame(index=self.members, columns=self.members).fillna(0.)
+
+        # add the payments to it
+        for p in self.payments:
+            df += p.to_matrix()
+
+        return df
+
+    def remove_payment(self, payment):
+        if type(payment) is Payment:
+            payment.delete_from_store()
+        elif type(payment) is str:
+            IOController().remove_by_id('payment', payment)
+
 
 class Payment(RelationalEntity):
     """
@@ -344,8 +374,8 @@ class Payment(RelationalEntity):
     """
 
     REQUIRED_ARGS = ['payer_id', 'group_id', 'amount']
-    RELATIONSHIP_ATTR = 'for'
-    AUTO_ARGS = ['for', 'currency', 'purpose', 'comment', 'location']
+    RELATIONSHIP_ATTR = 'paid_for'
+    AUTO_ARGS = ['paid_for', 'currency', 'purpose', 'comment', 'location']
     ALLOWED_RELATIONSHIP = Person
     TYPE = 'payment'
 
@@ -385,11 +415,11 @@ class Payment(RelationalEntity):
 
     @property
     def paid_for(self):
-        return self._attrs['for']
+        return self._attrs['paid_for']
 
     def _auto_fill(self, elem):
         # To be updated with a better autofill function
-        if elem == 'for':
+        if elem == 'paid_for':
             return Group.from_store(self._attrs['group_id']).members
         else:
             return {
@@ -399,15 +429,24 @@ class Payment(RelationalEntity):
                 'location': 'That place where we were'
             }[elem]
 
-    def add_persom(self, person):
+    def __eq__(self, other):
+        return type(other) is Payment and self.id == other.id
+
+    def add_person(self, person):
         self.add_relationship(person)
 
     def remove_person(self, person):
         self.remove_relationship(person)
 
     def to_matrix(self):
+        
+        # get the corresponding group
         g = Group.from_store(self.group_id)
+        
+        # create an empty dataframe
         df = pd.DataFrame(index=g.members, columns=g.members).fillna(0.)
+        
+        # add the payment to the dataframe
         for rec in self.paid_for:
             df.set_value(self.payer_id, rec, self.amount / len(self.paid_for))
 
